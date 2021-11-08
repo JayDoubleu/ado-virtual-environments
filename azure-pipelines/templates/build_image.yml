@@ -1,0 +1,77 @@
+steps:
+- ${{ if parameters.custom.managed_image_name }}:
+  - task: Bash@3
+    displayName: Insert managed image settings into template
+    inputs:
+      targetType: 'inline'
+      script: |
+        printf "Packer template before edit:\n"
+        cat ${{ parameters.image_definition_file }} | jq -C .
+        printf "\n"
+
+        echo editing ${{ parameters.image_definition_file }} ..
+        python3 $(Pipeline.Workspace)/self/misc/custom_config.py \
+          --managed-image-name=${{ parameters.custom.managed_image_name}} \
+          --managed-image-resource-group-name=${{parameters.custom.managed_image_resource_group_name}} \
+          --packer-template=${{ parameters.image_definition_file }}
+
+        printf "Packer template after edit:\n"
+        cat ${{ parameters.image_definition_file }} | jq -C .
+      workingDirectory: '$(Pipeline.Workspace)/virtual-environments/${{ parameters.image_detinition_path }}'
+      failOnStderr: true
+    env: ${{ parameters.env }}
+
+- ${{ if parameters.custom.shared_image_gallery_destination }}:
+  - task: Bash@3
+    displayName: Insert shared image gallery settings into template
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Convert parameters.shared_image_gallery_destination YAML parameters to shared_image_gallery.json file
+        echo '${{ convertToJson(parameters.custom.shared_image_gallery_destination) }}' | jq . > shared_image_gallery.json
+        printf "Packer template before edit:\n"
+        cat ${{ parameters.image_definition_file }} | jq -C .
+        printf "\n"
+        echo editing ${{ parameters.image_definition_file }} ..
+        # Modify packer template with shared image gallery settings
+        python3 $(Pipeline.Workspace)/self/misc/custom_config.py --shared-image-gallery --packer-template=${{ parameters.image_definition_file }}
+        printf "Packer template after edit:\n"
+        cat ${{ parameters.image_definition_file }} | jq -C .
+      workingDirectory: '$(Pipeline.Workspace)/virtual-environments/${{ parameters.image_detinition_path }}'
+      failOnStderr: true
+    env: ${{ parameters.env }}
+
+- task: Bash@3
+  displayName: Packer validate
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Convert parameters.vars to packer var-file json format
+      echo '${{ convertToJson(parameters.vars) }}' | jq . > variables.json
+      # Display variables.json
+      printf "\npacker var file:\n" && cat variables.json | jq -C . && printf "\n"
+      # Run packer validate
+      packer validate -var-file variables.json ${{ parameters.image_definition_file }}
+    workingDirectory: '$(Pipeline.Workspace)/virtual-environments/${{ parameters.image_detinition_path }}'
+    failOnStderr: true
+  env: ${{ parameters.env }}
+
+- task: Bash@3
+  displayName: Packer build
+  inputs:
+    targetType: 'inline'
+    script: |
+      export PACKER_LOG=1
+      export PACKER_LOG_PATH="packer.log"
+      packer build -var-file variables.json ${{ parameters.image_definition_file }}
+    workingDirectory: '$(Pipeline.Workspace)/virtual-environments/${{ parameters.image_detinition_path }}'
+    failOnStderr: true
+  env: ${{ parameters.env }}
+
+- task: PublishPipelineArtifact@1
+  condition: always()
+  displayName: Publish artifacts
+  inputs:
+    targetPath: '$(Pipeline.Workspace)/virtual-environments/${{ parameters.image_detinition_path }}'
+    artifactType: 'pipeline'
+    artifactName: ${{ replace(parameters.image_definition_file, '.json', '')}}-$(system.jobId)

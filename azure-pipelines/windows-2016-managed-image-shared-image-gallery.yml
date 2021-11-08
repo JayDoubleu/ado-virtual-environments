@@ -1,0 +1,67 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+  - repository: virtual-environments-github
+    name: actions/virtual-environments
+    type: github
+    endpoint: <name of github service connection>
+    trigger:
+      branches:
+        include:
+        - refs/heads/win16/*
+
+jobs:
+- job: image_generation_windows2016
+  displayName: Image Generation (windows2016)
+  timeoutInMinutes: 360 # 6 hours
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - checkout: self
+    path: self
+
+  - checkout: virtual-environments-github
+    path: virtual-environments
+
+  - template: templates/packer-prep.yml
+    parameters:
+      service_connection: <name of azure service connection>
+      packer_version: 1.7.8
+
+  - task: Bash@3
+    displayName: Generate temporary vm password
+    inputs:
+      targetType: 'inline'
+      script: |
+        temporary_packer_password=$(date +%s | sha256sum | base64 | head -c 32 ; echo)
+        echo "##vso[task.setvariable variable=TMP_PACKER_PASSWORD;issecret=true]$temporary_packer_password"
+      failOnStderr: true
+
+  - template: templates/build_image.yml
+    parameters:
+      image_detinition_path: images/win
+      image_definition_file: windows2016.json
+      vars:
+        install_password: $(TMP_PACKER_PASSWORD)
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        AGENT_IP: $(AGENT_IP)
+        ARM_RESOURCE_LOCATION: northeurope
+      custom:
+        managed_image_name: windows-2016-$(system.jobId)-$(build.buildnumber)
+        managed_image_resource_group_name: <shared gallery resource group name>
+        shared_image_gallery_destination:
+          subscription: $(ARM_SUBSCRIPTION_ID)
+          resource_group: <shared gallery resource group name>
+          gallery_name: <shared gallery name>
+          image_name: virtual-environments-windows-2016
+          image_version: 0.$(build.buildnumber)
+          replication_regions:
+            - northeurope
+            - westeurope
+          storage_account_type: Standard_LRS

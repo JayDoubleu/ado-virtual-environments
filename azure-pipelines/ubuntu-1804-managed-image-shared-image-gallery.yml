@@ -1,0 +1,56 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+  - repository: virtual-environments-github
+    name: actions/virtual-environments
+    type: github
+    endpoint: <name of github service connection>
+    trigger:
+      branches:
+        include:
+        - refs/heads/ubuntu18/*
+
+jobs:
+- job: image_generation_ubuntu1804
+  displayName: Image Generation (ubuntu1804)
+  timeoutInMinutes: 360 # 6 hours
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - checkout: self
+    path: self
+
+  - checkout: virtual-environments-github
+    path: virtual-environments
+
+  - template: templates/packer-prep.yml
+    parameters:
+      service_connection: <name of azure service connection>
+      packer_version: 1.7.8
+
+  - template: templates/build_image.yml
+    parameters:
+      image_detinition_path: images/linux
+      image_definition_file: ubuntu1804.json
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        AGENT_IP: $(AGENT_IP)
+        ARM_RESOURCE_LOCATION: northeurope
+      custom:
+        managed_image_name: ubuntu-1804-$(system.jobId)-$(build.buildnumber)
+        managed_image_resource_group_name: <shared gallery resource group name>
+        shared_image_gallery_destination:
+          subscription: $(ARM_SUBSCRIPTION_ID)
+          resource_group: <shared gallery resource group name>
+          gallery_name: <shared gallery name>
+          image_name: <shared gallery image name>
+          image_version: 0.$(build.buildnumber)
+          replication_regions:
+            - northeurope
+            - westeurope
+          storage_account_type: Standard_LRS

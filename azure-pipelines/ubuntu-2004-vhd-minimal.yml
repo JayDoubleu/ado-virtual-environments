@@ -1,0 +1,45 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+  - repository: virtual-environments-github
+    name: actions/virtual-environments
+    type: github
+    endpoint: <name of github service connection>
+    trigger:
+      branches:
+        include:
+        - refs/heads/ubuntu20/*
+
+jobs:
+- job: image_generation_ubuntu2004
+  displayName: Image Generation (ubuntu2004)
+  timeoutInMinutes: 360 # 6 hours
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - checkout: self
+    path: self
+
+  - checkout: virtual-environments-github
+    path: virtual-environments
+
+  - template: templates/packer-prep.yml
+    parameters:
+      service_connection: <name of azure service connection>
+      packer_version: 1.7.8
+
+  - template: templates/build_image.yml
+    parameters:
+      image_detinition_path: images/linux
+      image_definition_file: ubuntu2004.json
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        AGENT_IP: $(AGENT_IP)
+        ARM_RESOURCE_LOCATION: northeurope
+        ARM_RESOURCE_GROUP: <resource group name of storage for VHD>
+        ARM_STORAGE_ACCOUNT: <storage account name to store VHD artifacts>

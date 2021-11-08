@@ -1,0 +1,101 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+  - repository: virtual-environments-github
+    name: actions/virtual-environments
+    type: github
+    endpoint: <name of github service connection>
+
+jobs:
+- job: image_generation
+  displayName: Image Generation
+  timeoutInMinutes: 360 # 6 hours
+  strategy:
+    maxParallel: 3
+    matrix:
+      '(Ubuntu 18.04)':
+        image: ubuntu1804
+        image_detinition_path: images/linux
+        managed_image_name: ubuntu-1804-$(system.jobId)-$(build.buildnumber)
+        location: northeurope
+      '(Ubuntu 20.04)':
+        image: ubuntu2004
+        image_detinition_path: images/linux
+        managed_image_name: ubuntu-2004-$(system.jobId)-$(build.buildnumber)
+        location: northeurope
+      '(Windows Server 2016)':
+        image: windows2016
+        image_detinition_path: images/win
+        managed_image_name: windows-2016-$(system.jobId)-$(build.buildnumber)
+        location: northeurope
+      '(Windows Server 2019)':
+        image: windows2019
+        image_detinition_path: images/win
+        managed_image_name: windows-2019-$(system.jobId)-$(build.buildnumber)
+        location: northeurope
+      '(Windows Server 2022)':
+        image: windows2022
+        image_detinition_path: images/win
+        managed_image_name: windows-2022-$(system.jobId)-$(build.buildnumber)
+        location: northeurope
+  pool:
+    vmImage: ubuntu-latest
+
+  steps:
+  - checkout: self
+    path: self
+
+  - checkout: virtual-environments-github
+    path: virtual-environments
+
+  - template: templates/packer-prep.yml
+    parameters:
+      service_connection: <name of azure service connection>
+      packer_version: 1.7.8
+
+  - task: Bash@3
+    displayName: Generate temporary vm password
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Used only by windows builds
+        temporary_packer_password=$(date +%s | sha256sum | base64 | head -c 32 ; echo)
+        echo "##vso[task.setvariable variable=TMP_PACKER_PASSWORD;issecret=true]$temporary_packer_password"
+      failOnStderr: true
+
+  - template: templates/build_image.yml
+    parameters:
+      image_detinition_path: $(image_detinition_path)
+      image_definition_file: $(image).json
+      vars:
+        # Used only by windows builds
+        install_password: $(TMP_PACKER_PASSWORD)
+        # build_resource_group_name: <existing resource group to use for temporary VMs>
+        # custom name of temporary resource group used by packer
+        # https://www.packer.io/docs/builders/azure/arm#temp_resource_group_name
+        temp_resource_group_name: rg-pkr-$(managed_image_name)
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        AGENT_IP: $(AGENT_IP)
+        ARM_RESOURCE_LOCATION: $(location)
+      custom:
+        managed_image_name: $(managed_image_name)
+        managed_image_resource_group_name: rg-ado-virtual-environment-images
+        shared_image_gallery_destination:
+          # Supports all settings from https://www.packer.io/docs/builders/azure/arm#shared_image_gallery_destination
+          # Set subscription ID statically if your shared image gallery is in different subscription
+          # Service principal used as your service connection needs to have neccesary access to publish.
+          subscription: $(ARM_SUBSCRIPTION_ID)
+          resource_group: rg-my-compute-gallery
+          gallery_name: myComputeGallery
+          image_name: ado-virtual-environments-$(image)
+          image_version: 0.$(build.buildnumber)
+          replication_regions:
+            - northeurope
+            - westeurope
+          storage_account_type: Standard_LRS
