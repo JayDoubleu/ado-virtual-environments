@@ -21,7 +21,7 @@ There is currently three examples of template for each of supported agents:
     - No modifications to packer template are being made
     - Requires `ARM_RESOURCE_GROUP` and `ARM_STORAGE_ACCOUNT` settings to be specified.
     - Packer will build an VHD image and store it in your azure storage account specified in `ARM_STORAGE_ACCOUNT`
-    - NOTE: VHD builds are being deprecated
+    - NOTE: VHD packer images are being deprecated
     - Template example: [ubuntu-2004-vhd-minimal.yml](azure-pipelines/ubuntu-2004-vhd-minimal.yml)
 
 2. `-managed-image.yml` - This template is using packer template from [actions/virtual-environments](https://github.com/actions/virtual-environments) repository.
